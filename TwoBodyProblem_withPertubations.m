@@ -125,10 +125,41 @@ function a3B = thirdBodyAccel(rSat, rBody, muBody)
 
 end
 
+% function aSRP = srpAccel(rSat, rSun, const)
+% 
+%     % rSat = satellite position relative to Earth, km
+%     % rSun = Sun position relative to Earth, km
+% 
+%     % Vector from Sun to satellite
+%     rSunToSat = rSat - rSun; % km
+% 
+%     % Distance from Sun to satellite
+%     dSunToSat = norm(rSunToSat); % km
+% 
+%     % Unit vector pointing away from the Sun
+%     sHat = rSunToSat / dSunToSat;
+% 
+%     % SRP acceleration magnitude in m/s^2
+%     aSRP_mag_mps2 = const.Psrp * const.Cr * const.A_m * ...
+%                     (const.AU / dSunToSat)^2;
+% 
+%     % Convert to km/s^2
+%     aSRP_mag = aSRP_mag_mps2 / 1000;
+% 
+%     % Vector SRP acceleration
+%     aSRP = aSRP_mag * sHat;
+% 
+% end
+
 function aSRP = srpAccel(rSat, rSun, const)
 
     % rSat = satellite position relative to Earth, km
     % rSun = Sun position relative to Earth, km
+    %
+    % Cannonball SRP model:
+    % a_SRP = shadowFactor * P0 * Cr * (A/m) * (AU/d)^2 * sHat
+    %
+    % sHat points away from the Sun.
 
     % Vector from Sun to satellite
     rSunToSat = rSat - rSun; % km
@@ -139,8 +170,18 @@ function aSRP = srpAccel(rSat, rSun, const)
     % Unit vector pointing away from the Sun
     sHat = rSunToSat / dSunToSat;
 
+    % Default: satellite is illuminated
+    shadowFactor = 1;
+
+    % Optional Earth shadow model
+    if isfield(const, 'useEarthShadow') && const.useEarthShadow
+        if earthShadowCylindrical(rSat, rSun, const)
+            shadowFactor = 0;
+        end
+    end
+
     % SRP acceleration magnitude in m/s^2
-    aSRP_mag_mps2 = const.Psrp * const.Cr * const.A_m * ...
+    aSRP_mag_mps2 = shadowFactor * const.Psrp * const.Cr * const.A_m * ...
                     (const.AU / dSunToSat)^2;
 
     % Convert to km/s^2
@@ -148,5 +189,30 @@ function aSRP = srpAccel(rSat, rSun, const)
 
     % Vector SRP acceleration
     aSRP = aSRP_mag * sHat;
+
+end
+
+
+function inShadow = earthShadowCylindrical(rSat, rSun, const)
+
+    % Simple cylindrical Earth shadow model.
+    %
+    % rSun points from Earth to Sun.
+    % If the satellite is behind Earth and within one Earth radius of
+    % the Earth-Sun line, SRP is turned off.
+
+    % Unit vector from Earth to Sun
+    sHat_EarthToSun = rSun / norm(rSun);
+
+    % Projection of satellite position along Earth-to-Sun direction
+    projection = dot(rSat, sHat_EarthToSun);
+
+    % Perpendicular distance from satellite to Earth-Sun line
+    rPerp = norm(rSat - projection * sHat_EarthToSun);
+
+    % Shadow condition:
+    % projection < 0 means satellite is behind Earth relative to the Sun.
+    % rPerp < Earth radius means satellite is inside Earth's shadow cylinder.
+    inShadow = (projection < 0) && (rPerp < const.R);
 
 end

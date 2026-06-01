@@ -45,6 +45,7 @@ const.useJ2 = true;
 const.useSun = true;
 const.useMoon = true;
 const.useSRP = true;
+const.useEarthShadow = true;
 const.useDrag = false;  % Keep false for GEO cases
 
 %% ============================================================
@@ -203,3 +204,243 @@ grid on;
 xlabel('Time [days]');
 ylabel('\Delta |h| [km^2/s]');
 title('Angular Momentum Magnitude Change');
+
+%% ============================================================
+% 10. Area-to-mass ratio sweep
+% ============================================================
+
+% Save original value so we can restore it later
+A_m_original = const.A_m;
+
+% Area-to-mass ratio cases, m^2/kg
+AmCases = [0.005, 0.0123, 0.05, 0.1, 0.5, 1.0];
+
+maxE_Am = zeros(length(AmCases), 1);
+deltaA_Am = zeros(length(AmCases), 1);
+deltaI_Am = zeros(length(AmCases), 1);
+
+% Use fewer output points for sweeps so the code runs faster
+NoutSweep = 800;
+tspanSweep = linspace(t0, tf, NoutSweep);
+
+for j = 1:length(AmCases)
+
+    const.A_m = AmCases(j);
+
+    % Same initial orbit for every A/m case
+    X0_sweep = oe_to_cartesian(a0, e0, i0, RAAN0, omega0, M0, const.mu, delta_t);
+
+    [tSweep, XSweep] = ode45(@(t,X) TwoBodyProblem_withPertubations(t, X, const), ...
+                             tspanSweep, X0_sweep, opts);
+
+    [aSweep, eSweep, iSweep, ~, ~, ~] = ...
+        getElementHistory(tSweep, XSweep, const.mu);
+
+    maxE_Am(j) = max(eSweep);
+    deltaA_Am(j) = aSweep(end) - aSweep(1);
+    deltaI_Am(j) = iSweep(end) - iSweep(1);
+
+end
+
+% Restore original A/m
+const.A_m = A_m_original;
+
+figure;
+plot(AmCases, maxE_Am, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Area-to-mass ratio A/m [m^2/kg]');
+ylabel('Maximum eccentricity');
+title('Effect of Area-to-Mass Ratio on GEO Eccentricity');
+
+figure;
+plot(AmCases, deltaA_Am, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Area-to-mass ratio A/m [m^2/kg]');
+ylabel('\Delta a over propagation [km]');
+title('Effect of Area-to-Mass Ratio on Semi-major Axis Drift');
+
+figure;
+plot(AmCases, deltaI_Am, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Area-to-mass ratio A/m [m^2/kg]');
+ylabel('\Delta i over propagation [deg]');
+title('Effect of Area-to-Mass Ratio on Inclination Drift');
+
+%% ============================================================
+% 11. Distance-from-Earth / altitude sweep
+% ============================================================
+
+% Initial altitude cases above Earth surface, km
+% GEO altitude is about 35786 km.
+altCases = [35786, 37000, 40000, 45000, 50000];
+
+aCases = const.R + altCases;
+
+maxE_alt = zeros(length(aCases), 1);
+deltaA_alt = zeros(length(aCases), 1);
+deltaI_alt = zeros(length(aCases), 1);
+
+% Keep original A/m for this sweep
+const.A_m = A_m_original;
+
+for ia = 1:length(aCases)
+
+    a0_case = aCases(ia);
+
+    X0_sweep = oe_to_cartesian(a0_case, e0, i0, RAAN0, omega0, M0, ...
+                               const.mu, delta_t);
+
+    [tSweep, XSweep] = ode45(@(t,X) TwoBodyProblem_withPertubations(t, X, const), ...
+                             tspanSweep, X0_sweep, opts);
+
+    [aSweep, eSweep, iSweep, ~, ~, ~] = ...
+        getElementHistory(tSweep, XSweep, const.mu);
+
+    maxE_alt(ia) = max(eSweep);
+    deltaA_alt(ia) = aSweep(end) - aSweep(1);
+    deltaI_alt(ia) = iSweep(end) - iSweep(1);
+
+end
+
+figure;
+plot(altCases, maxE_alt, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Initial altitude above Earth [km]');
+ylabel('Maximum eccentricity');
+title('Effect of Distance from Earth on Eccentricity');
+
+figure;
+plot(altCases, deltaA_alt, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Initial altitude above Earth [km]');
+ylabel('\Delta a over propagation [km]');
+title('Effect of Distance from Earth on Semi-major Axis Drift');
+
+figure;
+plot(altCases, deltaI_alt, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Initial altitude above Earth [km]');
+ylabel('\Delta i over propagation [deg]');
+title('Effect of Distance from Earth on Inclination Drift');
+
+%% ============================================================
+% 12. Heatmap: altitude and area-to-mass ratio sweep
+% ============================================================
+
+% Matrix rows = altitude cases
+% Matrix columns = A/m cases
+maxEGrid = zeros(length(altCases), length(AmCases));
+deltaAGrid = zeros(length(altCases), length(AmCases));
+
+for ia = 1:length(aCases)
+
+    for j = 1:length(AmCases)
+
+        a0_case = aCases(ia);
+        const.A_m = AmCases(j);
+
+        X0_sweep = oe_to_cartesian(a0_case, e0, i0, RAAN0, omega0, M0, ...
+                                   const.mu, delta_t);
+
+        [tSweep, XSweep] = ode45(@(t,X) TwoBodyProblem_withPertubations(t, X, const), ...
+                                 tspanSweep, X0_sweep, opts);
+
+        [aSweep, eSweep, ~, ~, ~, ~] = ...
+            getElementHistory(tSweep, XSweep, const.mu);
+
+        maxEGrid(ia,j) = max(eSweep);
+        deltaAGrid(ia,j) = aSweep(end) - aSweep(1);
+
+    end
+
+end
+
+% Restore original value
+const.A_m = A_m_original;
+
+figure;
+imagesc(AmCases, altCases, maxEGrid);
+set(gca, 'YDir', 'normal');
+colorbar;
+xlabel('Area-to-mass ratio A/m [m^2/kg]');
+ylabel('Initial altitude above Earth [km]');
+title('Maximum Eccentricity vs Altitude and Area-to-Mass Ratio');
+
+figure;
+imagesc(AmCases, altCases, deltaAGrid);
+set(gca, 'YDir', 'normal');
+colorbar;
+xlabel('Area-to-mass ratio A/m [m^2/kg]');
+ylabel('Initial altitude above Earth [km]');
+title('\Delta a vs Altitude and Area-to-Mass Ratio');
+
+shadowFraction = computeShadowFraction(tOut, XOut, const);
+fprintf('Fraction of trajectory in Earth shadow: %.4f%%\n', shadowFraction*100);
+
+
+
+%% Functions
+function [aHist, eHist, iHist, RAANHist, omegaHist, MHist] = ...
+    getElementHistory(tOut, XOut, mu)
+
+    aHist = zeros(length(tOut), 1);
+    eHist = zeros(length(tOut), 1);
+    iHist = zeros(length(tOut), 1);
+    RAANHist = zeros(length(tOut), 1);
+    omegaHist = zeros(length(tOut), 1);
+    MHist = zeros(length(tOut), 1);
+
+    delta_t_oe = 0;
+
+    for k = 1:length(tOut)
+
+        X_k = XOut(k,:)';
+
+        [aHist(k), eHist(k), iHist(k), RAANHist(k), omegaHist(k), MHist(k)] = ...
+            Cartesian_to_oe(X_k, mu, delta_t_oe);
+
+    end
+
+end
+
+function shadowFraction = computeShadowFraction(tOut, XOut, const)
+
+    inShadowArray = false(length(tOut), 1);
+
+    for k = 1:length(tOut)
+
+        t = tOut(k);
+        rSat = XOut(k,1:3)';
+
+        rSun = sunPositionApprox(t, const);
+
+        inShadowArray(k) = earthShadowCylindrical_main(rSat, rSun, const);
+
+    end
+
+    shadowFraction = sum(inShadowArray) / length(inShadowArray);
+
+end
+
+
+function inShadow = earthShadowCylindrical_main(rSat, rSun, const)
+
+    sHat_EarthToSun = rSun / norm(rSun);
+
+    projection = dot(rSat, sHat_EarthToSun);
+
+    rPerp = norm(rSat - projection * sHat_EarthToSun);
+
+    inShadow = (projection < 0) && (rPerp < const.R);
+
+end
+
+function rSun = sunPositionApprox(t, const)
+
+    thetaS = const.nSun * t;
+
+    rSun = const.AU * [cos(thetaS);
+                       sin(thetaS);
+                       0];
+
+end
