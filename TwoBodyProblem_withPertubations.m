@@ -28,17 +28,17 @@ function dydt = TwoBodyProblem_withPertubations(t, X, const)
 
     a_J2 = [ax_J2; ay_J2; az_J2];
 
-    % %% Atmospheric drag
-    % % For GEO, this is basically negligible, but keep it if you want to compare models.
-    % h = r - const.R; % altitude, km
-    % [rho, ~] = atmosphere(h); % rho should be kg/m^3
-    % 
-    % % v is in km/s, so convert velocity to m/s for drag, then back to km/s^2
-    % v_mps = v * 1000;
-    % vVec_mps = vVec * 1000;
-    % 
-    % a_drag_mps2 = -0.5 * rho * const.Cd * const.A_m * v_mps * vVec_mps;
-    % a_drag = a_drag_mps2 / 1000; % convert m/s^2 to km/s^2
+    %% Atmospheric drag
+    % For GEO, this is basically negligible, but kept in for altitude sweep
+    h = r - const.R; % altitude, km
+    [rho, ~] = atmosphere(h); % rho should be kg/m^3
+
+    % v is in km/s, so convert velocity to m/s for drag, then back to km/s^2
+    v_mps = v * 1000;
+    vVec_mps = vVec * 1000;
+
+    a_drag_mps2 = -0.5 * rho * const.Cd * const.A_m * v_mps * vVec_mps;
+    a_drag = a_drag_mps2 / 1000; % convert m/s^2 to km/s^2
 
     %% Approximate Sun and Moon position vectors relative to Earth
     rSun = sunPositionApprox(t, const);    % km
@@ -50,16 +50,6 @@ function dydt = TwoBodyProblem_withPertubations(t, X, const)
 
     %% Solar radiation pressure
     a_SRP = srpAccel(rVec, rSun, const);
-
-    %% Total acceleration
-    % a_total = a_grav ...
-    %         + a_J2 ...
-    %         + a_Sun_grav ...
-    %         + a_Moon_grav ...
-    %         + a_SRP;
-    % 
-    % % If you want to include drag too, use this instead:
-    % % a_total = a_grav + a_J2 + a_Sun_grav + a_Moon_grav + a_SRP + a_drag;
 
     %% Total acceleration with switches
     a_total = a_grav;
