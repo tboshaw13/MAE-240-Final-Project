@@ -95,6 +95,68 @@ opts = odeset( ...
     'AbsTol', 1e-12);
 
 %% ============================================================
+% 5A. Two-body validation printout only
+% ============================================================
+
+% Purpose:
+%   Show that without perturbations, the orbital elements remain constant.
+%   This validates the numerical integration and element conversion.
+%
+%   No plots are made here. Only values are printed.
+
+const2BP = const;
+
+% Turn off all perturbations
+const2BP.useJ2 = false;
+const2BP.useSun = false;
+const2BP.useMoon = false;
+const2BP.useSRP = false;
+const2BP.useEarthShadow = false;
+const2BP.useDrag = false;
+
+[t2BP, X2BP] = ode45(@(t,X) TwoBodyProblem_withPertubations(t, X, const2BP), ...
+                     tspan, X0, opts);
+
+[a2BP, e2BP, i2BP, RAAN2BP, omega2BP, M2BP] = ...
+    getElementHistory(t2BP, X2BP, const.mu);
+
+energy2BP = zeros(length(t2BP),1);
+h2BP = zeros(length(t2BP),1);
+
+for k = 1:length(t2BP)
+
+    r_k = X2BP(k,1:3)';
+    v_k = X2BP(k,4:6)';
+
+    energy2BP(k) = 0.5*dot(v_k,v_k) - const.mu/norm(r_k);
+    h2BP(k) = norm(cross(r_k,v_k));
+
+end
+
+fprintf('\n============================================================\n');
+fprintf('TWO-BODY VALIDATION: ALL PERTURBATIONS OFF\n');
+fprintf('============================================================\n');
+fprintf('Initial a        = %.12f km\n', a2BP(1));
+fprintf('Final a          = %.12f km\n', a2BP(end));
+fprintf('Max |a - a0|     = %.6e km\n\n', max(abs(a2BP - a2BP(1))));
+
+fprintf('Initial e        = %.12e\n', e2BP(1));
+fprintf('Final e          = %.12e\n', e2BP(end));
+fprintf('Max |e - e0|     = %.6e\n\n', max(abs(e2BP - e2BP(1))));
+
+fprintf('Initial i        = %.12e deg\n', i2BP(1));
+fprintf('Final i          = %.12e deg\n', i2BP(end));
+fprintf('Max |i - i0|     = %.6e deg\n\n', max(abs(i2BP - i2BP(1))));
+
+fprintf('Initial energy   = %.12e km^2/s^2\n', energy2BP(1));
+fprintf('Final energy     = %.12e km^2/s^2\n', energy2BP(end));
+fprintf('Max |E - E0|     = %.6e km^2/s^2\n\n', max(abs(energy2BP - energy2BP(1))));
+
+fprintf('Initial |h|      = %.12e km^2/s\n', h2BP(1));
+fprintf('Final |h|        = %.12e km^2/s\n', h2BP(end));
+fprintf('Max |h - h0|     = %.6e km^2/s\n', max(abs(h2BP - h2BP(1))));
+fprintf('============================================================\n\n');
+%% ============================================================
 % 6. Study 1: Fixed GEO orbit, varying area-to-mass ratio
 %    Separate figure for each A/m case
 % ============================================================
@@ -247,6 +309,87 @@ grid on;
 xlabel('Time [days]');
 ylabel('\Delta |h| [km^2/s]');
 title('Angular Momentum Magnitude Change');
+
+%% ============================================================
+% 10. Fourteen-day CubeSat drift from target orbit
+% ============================================================
+
+% Purpose:
+%   This section does NOT implement control.
+%   It samples the uncontrolled perturbed CubeSat orbit every 14 days and
+%   compares the osculating elements to the target GEO orbit.
+%
+%   These 14-day errors show what future correction/control would need to
+%   reduce.
+
+% CubeSat / small satellite case already used in Study 1
+constCubeSat = const;
+constCubeSat.A_m = 0.05;  % m^2/kg
+
+% Target GEO orbit
+aTarget = a0;
+eTarget = e0;
+iTarget = i0;
+
+% Initial condition is the target GEO orbit
+X0_cube = oe_to_cartesian(aTarget, eTarget, iTarget, ...
+                          RAAN0, omega0, M0, const.mu, delta_t);
+
+% Propagate CubeSat case with perturbations ON
+[tCube, XCube] = ode45(@(t,X) TwoBodyProblem_withPertubations(t, X, constCubeSat), ...
+                       tspan, X0_cube, opts);
+
+[aCube, eCube, iCube, RAANCube, omegaCube, MCube] = ...
+    getElementHistory(tCube, XCube, const.mu);
+
+timeDaysCube = tCube / (24*3600);
+
+% Sample every 14 days
+sampleIntervalDays = 14;
+sampleDays = 0:sampleIntervalDays:days;
+
+aSample = interp1(timeDaysCube, aCube, sampleDays, 'linear');
+eSample = interp1(timeDaysCube, eCube, sampleDays, 'linear');
+iSample = interp1(timeDaysCube, iCube, sampleDays, 'linear');
+
+% Difference between perturbed osculating elements and target orbit
+deltaA_sample = aSample - aTarget;
+deltaE_sample = eSample - eTarget;
+deltaI_sample = iSample - iTarget;
+
+% Print summary values
+fprintf('\n============================================================\n');
+fprintf('14-DAY CUBESAT DRIFT FROM TARGET ORBIT\n');
+fprintf('============================================================\n');
+fprintf('CubeSat A/m                    = %.4f m^2/kg\n', constCubeSat.A_m);
+fprintf('Max sampled |a - aTarget|      = %.6f km\n', max(abs(deltaA_sample)));
+fprintf('Max sampled |e - eTarget|      = %.6e\n', max(abs(deltaE_sample)));
+fprintf('Max sampled |i - iTarget|      = %.6e deg\n', max(abs(deltaI_sample)));
+fprintf('Final sampled a - aTarget      = %.6f km\n', deltaA_sample(end));
+fprintf('Final sampled e - eTarget      = %.6e\n', deltaE_sample(end));
+fprintf('Final sampled i - iTarget      = %.6e deg\n', deltaI_sample(end));
+fprintf('============================================================\n\n');
+
+% One final graph showing the 14-day drift in a, e, and i
+figure('Name', '14-Day CubeSat Drift from Target Orbit', 'Color', 'w');
+tiledlayout(3,1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+plot(sampleDays, deltaA_sample, 'o-', 'LineWidth', 1.5);
+grid on;
+ylabel('a - a_{target} [km]');
+title('14-Day CubeSat Drift from Target Orbit');
+
+nexttile;
+plot(sampleDays, deltaE_sample, 'o-', 'LineWidth', 1.5);
+grid on;
+ylabel('e - e_{target}');
+
+nexttile;
+plot(sampleDays, deltaI_sample, 'o-', 'LineWidth', 1.5);
+grid on;
+xlabel('Time [days]');
+ylabel('i - i_{target} [deg]');
 
 %% ============================================================
 % Local functions
